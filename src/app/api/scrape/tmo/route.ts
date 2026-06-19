@@ -235,9 +235,10 @@ async function saveToSupabase(prices: ParsedPrice[]) {
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
+  const querySecret = request.nextUrl.searchParams.get("secret");
 
   // Allow Vercel cron or manual trigger with secret
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && querySecret !== cronSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
