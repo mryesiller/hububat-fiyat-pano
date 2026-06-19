@@ -118,23 +118,28 @@ DOMESTIC_MARKETS = [
 
 
 def download_pdf():
-    """Download TMO daily bulletin PDF"""
+    """Download TMO daily bulletin PDF with retries"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
-    try:
-        response = requests.get(TMO_PDF_URL, headers=headers, timeout=30, verify=False)
-        response.raise_for_status()
-        
-        with open(PDF_PATH, "wb") as f:
-            f.write(response.content)
-        
-        print(f"PDF downloaded: {len(response.content)} bytes")
-        return True
-    except Exception as e:
-        print(f"Error downloading PDF: {e}")
-        return False
+    for attempt in range(3):
+        try:
+            response = requests.get(TMO_PDF_URL, headers=headers, timeout=60, verify=False)
+            response.raise_for_status()
+            
+            with open(PDF_PATH, "wb") as f:
+                f.write(response.content)
+            
+            print(f"PDF downloaded: {len(response.content)} bytes")
+            return True
+        except Exception as e:
+            print(f"Error downloading PDF (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                import time
+                time.sleep(10)
+    
+    return False
 
 
 def extract_text_from_pdf():
@@ -367,14 +372,14 @@ def main():
     
     # Download PDF
     if not download_pdf():
-        print("Failed to download PDF, exiting")
-        sys.exit(1)
+        print("Failed to download PDF after retries")
+        return
     
     # Extract text
     text = extract_text_from_pdf()
     if not text:
-        print("Failed to extract text from PDF, exiting")
-        sys.exit(1)
+        print("Failed to extract text from PDF")
+        return
     
     # Parse prices
     prices = parse_tmo_prices(text)

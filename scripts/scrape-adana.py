@@ -50,7 +50,7 @@ ADANA_MARKET = "adana"
 
 
 def fetch_adana_data(date_str):
-    """Fetch data from Adana TB API for a specific date"""
+    """Fetch data from Adana TB API for a specific date with retries"""
     params = {
         "start": date_str,
         "end": date_str,
@@ -61,13 +61,18 @@ def fetch_adana_data(date_str):
         "Accept": "application/json",
     }
     
-    try:
-        response = requests.get(ADANA_API_URL, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Error fetching Adana data for {date_str}: {e}")
-        return []
+    for attempt in range(3):
+        try:
+            response = requests.get(ADANA_API_URL, params=params, headers=headers, timeout=60)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error fetching Adana data for {date_str} (attempt {attempt + 1}/3): {e}")
+            if attempt < 2:
+                import time
+                time.sleep(10)
+    
+    return []
 
 
 def parse_adana_prices(data, date_str):
@@ -191,8 +196,8 @@ def main():
     data = fetch_adana_data(yesterday)
     
     if not data:
-        print("No data received from API")
-        sys.exit(1)
+        print("No data received from API after retries")
+        return
     
     print(f"Received {len(data)} total entries from API")
     
