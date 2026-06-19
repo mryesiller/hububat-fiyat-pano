@@ -23,6 +23,7 @@ jobs:
         pip install requests PyMuPDF supabase
     
     - name: Run Adana TB Scraper
+      continue-on-error: true
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
