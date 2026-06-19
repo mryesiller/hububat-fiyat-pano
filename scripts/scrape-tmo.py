@@ -50,17 +50,28 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 # Hububat products we track
 HUBUBAT_PRODUCTS = {
+    "ekmeklik buğday": "bugday",
     "buğday": "bugday",
     "arpa": "arpa",
     "mısır": "misir",
     "yulaf": "yulaf",
     "soya": "soya",
+    "soya fasulyesi": "soya",
     "ayçiçeği": "aycicegi",
+    "ayçiçeği tohumu": "aycicegi",
     "pirinç": "pirinc",
     "mercimek": "mercimek",
     "fasulye": "fasulye",
     "nohut": "nohut",
 }
+
+# Product section headers in TMO PDF
+PRODUCT_HEADERS = [
+    "ekmeklik buğday", "kırmızı sert buğday", "diğer beyaz buğdaylar",
+    "diğer kırmızı buğdaylar", "düşük vasıflı ekmeklik buğday",
+    "arpa", "mısır", "yulaf", "soya fasulyesi", "ayçiçeği",
+    "kepekler", "bakliyat", "mercimek", "fasulye", "nohut", "pirinç"
+]
 
 # TMO market names to our slug mapping
 TMO_MARKETS = {
@@ -70,8 +81,8 @@ TMO_MARKETS = {
     "adana": "adana",
     "gaziantep": "gaziantep",
     "corum": "corum",
-    "polatlı": "polatli",
     "çorum": "corum",
+    "polatlı": "polatli",
     "ankara": "ankara",
     "tekirdağ": "tekirdag",
     "izmir": "izmir",
@@ -97,6 +108,13 @@ TMO_MARKETS = {
     "almanya": "almanya",
     "fransa": "fransa",
 }
+
+# Domestic vs international markets
+DOMESTIC_MARKETS = [
+    "konya", "edirne", "eskisehir", "adana", "gaziantep", "corum", "çorum",
+    "polatlı", "ankara", "tekirdağ", "izmir", "manisa", "aydın", "mersin",
+    "antalya", "samsun", "tokat", "diyarbakır", "elazığ", "malatya", "şanlıurfa", "mardin"
+]
 
 
 def download_pdf():
@@ -142,9 +160,14 @@ def parse_tmo_prices(text):
     Parse TMO PDF text to extract hububat prices.
     
     TMO PDF format:
-    - Product names: "EKMEKLİK BUĞDAY", "ARPA", "MISIR", "YULAF", "SOYA", etc.
-    - Market names on separate lines, numbers on following lines
-    - Format per market: MarketName\nQuantity\nTL/ton\n$/ton\n...
+    - Product headers like "EKMEKLİK BUĞDAY", "ARPA", "MISIR"
+    - Each product has market entries
+    - Each market entry: MarketName on its own line, followed by numeric values
+    - Format per market line group:
+      MarketName
+      qty1 | tl1 | usd1 | qty2 | tl2 | usd2 | last_year | change%
+      
+    We want the LATEST tl price (tl2 if available, otherwise tl1)
     """
     prices = []
     lines = [l.strip() for l in text.split('\n') if l.strip()]
@@ -152,53 +175,123 @@ def parse_tmo_prices(text):
     current_product = None
     current_product_slug = None
     
-    for i, line in enumerate(lines):
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         line_lower = line.lower()
         
-        # Detect product names
-        for product_name, slug in HUBUBAT_PRODUCTS.items():
-            if product_name in line_lower and len(line) < 50:
-                current_product = product_name
-                current_product_slug = slug
+        # Detect product section headers
+        for header in PRODUCT_HEADERS:
+            if header in line_lower and len(line) < 60:
+                # Map header to product slug
+                if "buğday" in line_lower:
+                    current_product = "buğday"
+                    current_product_slug = "bugday"
+                elif "arpa" in line_lower and "kepeği" not in line_lower:
+                    current_product = "arpa"
+                    current_product_slug = "arpa"
+                elif "mısır" in line_lower and "kepeği" not in line_lower and "gluteni" not in line_lower and "özü" not in line_lower:
+                    current_product = "mısır"
+                    current_product_slug = "misir"
+                elif "yulaf" in line_lower:
+                    current_product = "yulaf"
+                    current_product_slug = "yulaf"
+                elif "soya" in line_lower:
+                    current_product = "soya"
+                    current_product_slug = "soya"
+                elif "ayçiçeği" in line_lower and "yağı" not in line_lower:
+                    current_product = "ayçiçeği"
+                    current_product_slug = "aycicegi"
+                elif "pirinç" in line_lower:
+                    current_product = "pirinç"
+                    current_product_slug = "pirinc"
+                elif "mercimek" in line_lower:
+                    current_product = "mercimek"
+                    current_product_slug = "mercimek"
+                elif "fasulye" in line_lower:
+                    current_product = "fasulye"
+                    current_product_slug = "fasulye"
+                elif "nohut" in line_lower:
+                    current_product = "nohut"
+                    current_product_slug = "nohut"
                 break
         
-        if not current_product:
-            continue
-        
-        # Try to parse market lines
-        for market_name, market_slug in TMO_MARKETS.items():
-            if market_name.lower() in line_lower and line_lower.strip() == market_name.lower():
-                # Market name is on its own line, numbers are on following lines
-                # Collect numbers from next few lines
+        # Try to parse market lines - only exact matches for domestic markets
+        if current_product and line_lower in DOMESTIC_MARKETS:
+            market_name = line_lower
+            market_slug = TMO_MARKETS.get(market_name)
+            
+            if market_slug:
+                # Collect numbers from next lines (up to 8 values max)
                 numbers = []
-                for j in range(i + 1, min(i + 6, len(lines))):
+                j = i + 1
+                while j < len(lines) and len(numbers) < 8:
                     next_line = lines[j]
-                    # Stop if we hit another market, product, or empty line
-                    if any(m.lower() == next_line.lower() for m in TMO_MARKETS.keys()):
+                    next_lower = next_line.lower()
+                    
+                    # Stop if we hit another domestic market
+                    if next_lower in DOMESTIC_MARKETS:
                         break
-                    if any(p in next_line.lower() for p in HUBUBAT_PRODUCTS.keys()):
+                    # Stop if we hit a product header
+                    if any(h in next_lower for h in PRODUCT_HEADERS):
                         break
+                    # Stop if line contains text (not just numbers/dashes)
+                    if re.search(r'[a-zA-ZğüşıöçĞÜŞİÖÇ]{3,}', next_line):
+                        break
+                    
                     # Extract numbers from this line
-                    found = re.findall(r'\d{1,3}(?:\.\d{3})*(?:,\d+)?', next_line)
-                    found = [n.replace('.', '').replace(',', '.') for n in found]
-                    numbers.extend(found)
+                    # Handle formats: "15.222", "-", "0", "15,222"
+                    if next_line == "-":
+                        numbers.append(None)
+                    else:
+                        found = re.findall(r'\d{1,3}(?:\.\d{3})*(?:,\d+)?', next_line)
+                        if found:
+                            # Convert Turkish number format: 15.222 -> 15222
+                            num_str = found[0].replace('.', '').replace(',', '.')
+                            try:
+                                numbers.append(float(num_str))
+                            except ValueError:
+                                numbers.append(None)
+                        else:
+                            numbers.append(None)
+                    
+                    j += 1
                 
-                if len(numbers) >= 2:
-                    try:
-                        quantity = float(numbers[0]) if float(numbers[0]) > 0 else None
-                        price_tl = float(numbers[1])
-                        
-                        prices.append({
-                            "product_slug": current_product_slug,
-                            "market_slug": market_slug,
-                            "quantity": quantity,
-                            "price_tl": price_tl,
-                            "unit": "TL/ton",
-                            "source": "tmo_pdf",
-                            "date": datetime.now().strftime("%Y-%m-%d"),
-                        })
-                    except (ValueError, IndexError):
-                        pass
+                # Parse numbers based on TMO format
+                # Format: qty1, tl1, usd1, qty2, tl2, usd2, last_year, change%
+                # We want the latest TL price
+                price_tl = None
+                quantity = None
+                
+                if len(numbers) >= 6:
+                    # Two columns of data - use the second TL price (most recent)
+                    # numbers: [qty1, tl1, usd1, qty2, tl2, usd2, ...]
+                    if numbers[4] is not None and numbers[4] > 0:
+                        price_tl = numbers[4]
+                        quantity = numbers[3] if numbers[3] is not None and numbers[3] > 0 else None
+                    elif numbers[1] is not None and numbers[1] > 0:
+                        price_tl = numbers[1]
+                        quantity = numbers[0] if numbers[0] is not None and numbers[0] > 0 else None
+                elif len(numbers) >= 3:
+                    # Single column: [qty1, tl1, usd1, ...]
+                    if numbers[1] is not None and numbers[1] > 0:
+                        price_tl = numbers[1]
+                        quantity = numbers[0] if numbers[0] is not None and numbers[0] > 0 else None
+                
+                # Only add if we have a valid price (> 1000 TL/ton for grains)
+                if price_tl is not None and price_tl > 1000:
+                    prices.append({
+                        "product_slug": current_product_slug,
+                        "market_slug": market_slug,
+                        "quantity": quantity,
+                        "price_tl": price_tl,
+                        "unit": "TL/ton",
+                        "source": "tmo_pdf",
+                        "date": datetime.now().strftime("%Y-%m-%d"),
+                    })
+                    print(f"  Parsed: {current_product} | {market_name} | {price_tl} TL/ton | qty: {quantity}")
+        
+        i += 1
     
     return prices
 
@@ -227,6 +320,7 @@ def save_to_supabase(prices):
             market_id = market_map.get(price["market_slug"])
             
             if not product_id or not market_id:
+                print(f"  Skipping: product={price['product_slug']}, market={price['market_slug']} (not found in DB)")
                 continue
             
             entries.append({
