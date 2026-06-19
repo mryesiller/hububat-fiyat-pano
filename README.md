@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hububat Fiyat Pano
 
-## Getting Started
+Türkiye'nin 7 bölgesinden ve uluslararası piyasalardan günlük, haftalık ve aylık hububat ve baklagil fiyatlarını takip eden şeffaf fiyat platformu.
 
-First, run the development server:
+## Özellikler
+
+- **7 Bölge, 21+ İl**: Marmara, Ege, Akdeniz, İç Anadolu, Karadeniz, Doğu Anadolu, Güneydoğu Anadolu
+- **10 Ürün**: Buğday, Arpa, Mısır, Yulaf, Soya, Ayçiçeği, Pirinç, Mercimek, Fasulye, Nohut
+- **Veri Kaynakları**: TMO (otomatik PDF), Adana TB (otomatik API), Diğer borsalar (manuel)
+- **Şeffaflık**: Her fiyatın kaynağı (TMO, Borsa, Manuel) etiketli
+- **SEO**: Her ürün ve il için ayrı sayfalar
+- **Raporlar**: Piyasa analizleri ve yorumlar
+- **Admin Paneli**: Manuel fiyat girişi ve otomasyon yönetimi
+
+## Tech Stack
+
+- **Frontend**: Next.js 16 + TypeScript + Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth)
+- **Grafik**: Recharts (ileride eklenecek)
+- **Deployment**: Vercel
+- **Scraping**: Python + PyMuPDF + Requests
+
+## Kurulum
+
+### 1. Supabase Projesi Oluşturun
+
+1. [supabase.com](https://supabase.com)'da ücretsiz hesap oluşturun
+2. Yeni proje oluşturun
+3. SQL Editor'a gidin
+4. `supabase/schema.sql` dosyasını kopyalayıp çalıştırın
+
+### 2. Environment Variables
+
+`.env.local` dosyası oluşturun:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_KEY=your-service-key
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Projeyi Çalıştırın
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment (Vercel)
 
-## Learn More
+```bash
+npm install -g vercel
+vercel
+```
 
-To learn more about Next.js, take a look at the following resources:
+Vercel dashboard'unda Environment Variables'ları eklemeyi unutmayın.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Otomasyon (Cron Jobs)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### TMO PDF Parser
+```bash
+# Her gün saat 09:00'da çalıştır
+0 9 * * * cd /path/to/project && python3 scripts/scrape-tmo.py
+```
 
-## Deploy on Vercel
+### Adana TB API Scraper
+```bash
+# Her gün saat 09:30'da çalıştır
+30 9 * * * cd /path/to/project && python3 scripts/scrape-adana.py
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Vercel'de serverless function olarak da çalıştırabilirsiniz.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Veri Modeli
+
+### Products
+- id, name, category, unit, slug
+
+### Markets
+- id, name, city, region, slug, type, source
+
+### Price Entries
+- id, product_id, market_id, date, quantity, price_tl, price_min, price_max, price_avg, unit, source
+
+### Reports
+- id, title, slug, content, author, date, status
+
+## Klasör Yapısı
+
+```
+hububat-fiyat-pano/
+├── src/
+│   ├── app/              # Next.js App Router
+│   ├── lib/              # Supabase client, utilities
+│   ├── types/            # TypeScript types
+│   └── components/       # React components
+├── scripts/              # Python scrapers
+├── supabase/             # SQL schema
+└── .env.example          # Environment variables
+```
+
+## Geliştirilecek Özellikler
+
+- [ ] Grafikler (Recharts ile tarihsel fiyat grafikleri)
+- [ ] Haftalık/aylık ortalama fiyatlar
+- [ ] Fiyat değişim bildirimleri
+- [ ] Çiftçi kayıt ve bildirim sistemi
+- [ ] Daha fazla borsa otomasyonu
+- [ ] Mobil uygulama
+
+## Lisans
+
+2026 Hububat Fiyat Pano. Tüm hakları saklıdır.

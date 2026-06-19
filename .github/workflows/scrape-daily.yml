@@ -1,0 +1,42 @@
+name: Daily Data Scraping
+
+on:
+  schedule:
+    # Her gün saat 06:00 UTC'de çalıştır (Türkiye saatiyle 09:00)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Manuel çalıştırma için
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests PyMuPDF supabase
+    
+    - name: Run Adana TB Scraper
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      run: |
+        python scripts/scrape-adana.py
+    
+    - name: Run TMO PDF Scraper
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      run: |
+        python scripts/scrape-tmo.py
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "Scraping failed! Check logs for details."
