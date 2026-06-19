@@ -18,8 +18,12 @@ import sys
 import re
 import json
 import requests
+import urllib3
 from datetime import datetime
 from pathlib import Path
+
+# Suppress SSL verification warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Try to import PyMuPDF, fallback to basic text extraction
 try:
@@ -102,7 +106,7 @@ def download_pdf():
     }
     
     try:
-        response = requests.get(TMO_PDF_URL, headers=headers, timeout=30)
+        response = requests.get(TMO_PDF_URL, headers=headers, timeout=30, verify=False)
         response.raise_for_status()
         
         with open(PDF_PATH, "wb") as f:
@@ -137,24 +141,21 @@ def parse_tmo_prices(text):
     """
     Parse TMO PDF text to extract hububat prices.
     
-    TMO PDF format (from our analysis):
+    TMO PDF format:
     - Product names: "EKMEKLİK BUĞDAY", "ARPA", "MISIR", "YULAF", "SOYA", etc.
-    - Market names followed by numbers: "Konya  273  15.779  342"
-    - Format: Market, Quantity, TL/ton, $/ton
+    - Market names on separate lines, numbers on following lines
+    - Format per market: MarketName\nQuantity\nTL/ton\n$/ton\n...
     """
     prices = []
-    lines = text.split('\n')
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
     
     current_product = None
     current_product_slug = None
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
         
         # Detect product names
-        line_lower = line.lower()
         for product_name, slug in HUBUBAT_PRODUCTS.items():
             if product_name in line_lower and len(line) < 50:
                 current_product = product_name
@@ -165,12 +166,22 @@ def parse_tmo_prices(text):
             continue
         
         # Try to parse market lines
-        # Pattern: MarketName [quantity] [price_tl] [price_usd]
         for market_name, market_slug in TMO_MARKETS.items():
-            if market_name.lower() in line_lower:
-                # Extract numbers from line
-                numbers = re.findall(r'\d{1,3}(?:\.\d{3})*(?:,\d+)?', line)
-                numbers = [n.replace('.', '').replace(',', '.') for n in numbers]
+            if market_name.lower() in line_lower and line_lower.strip() == market_name.lower():
+                # Market name is on its own line, numbers are on following lines
+                # Collect numbers from next few lines
+                numbers = []
+                for j in range(i + 1, min(i + 6, len(lines))):
+                    next_line = lines[j]
+                    # Stop if we hit another market, product, or empty line
+                    if any(m.lower() == next_line.lower() for m in TMO_MARKETS.keys()):
+                        break
+                    if any(p in next_line.lower() for p in HUBUBAT_PRODUCTS.keys()):
+                        break
+                    # Extract numbers from this line
+                    found = re.findall(r'\d{1,3}(?:\.\d{3})*(?:,\d+)?', next_line)
+                    found = [n.replace('.', '').replace(',', '.') for n in found]
+                    numbers.extend(found)
                 
                 if len(numbers) >= 2:
                     try:
@@ -229,13 +240,22 @@ def save_to_supabase(prices):
             })
         
         if entries:
+            # Remove duplicates based on product_id + market_id + date + source
+            seen = set()
+            unique_entries = []
+            for entry in entries:
+                key = (entry["product_id"], entry["market_id"], entry["date"], entry["source"])
+                if key not in seen:
+                    seen.add(key)
+                    unique_entries.append(entry)
+            
             # Use upsert to avoid duplicates
             result = supabase.from_("price_entries").upsert(
-                entries,
+                unique_entries,
                 on_conflict="product_id,market_id,date,source"
             ).execute()
             
-            print(f"Saved {len(entries)} price entries to Supabase")
+            print(f"Saved {len(unique_entries)} price entries to Supabase")
             return True
         else:
             print("No valid entries to save")
