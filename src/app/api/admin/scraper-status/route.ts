@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { verifyAdminToken } from "@/lib/admin-auth";
 
 export async function GET(request: NextRequest) {
+  const token = request.headers.get("x-admin-token");
+  if (!token || !verifyAdminToken(token)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 

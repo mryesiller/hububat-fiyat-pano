@@ -17,6 +17,9 @@ interface ScraperStatus {
 }
 
 export default function AdminPage() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loginData, setLoginData] = useState({ username: "", password: "" });
+  const [loginError, setLoginError] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<ScraperStatus | null>(null);
@@ -31,13 +34,58 @@ export default function AdminPage() {
     source: "manual",
   });
 
+  // Check if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    if (token) {
+      setIsLoggedIn(true);
+    }
+  }, []);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError("");
+
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(loginData),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        localStorage.setItem("admin_token", data.token);
+        setIsLoggedIn(true);
+      } else {
+        setLoginError(data.error || "Giriş başarısız");
+      }
+    } catch {
+      setLoginError("Bağlantı hatası");
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("admin_token");
+    setIsLoggedIn(false);
+  }
+
+  function getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem("admin_token");
+    return token ? { "x-admin-token": token } : {};
+  }
+
   async function fetchStatus() {
     setStatusLoading(true);
     try {
-      const res = await fetch("/api/admin/scraper-status");
+      const res = await fetch("/api/admin/scraper-status", {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success) {
         setStatus(data);
+      } else if (data.error === "Unauthorized") {
+        handleLogout();
       }
     } catch (err) {
       console.error("Status fetch error:", err);
@@ -47,11 +95,12 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    fetchStatus();
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchStatus, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    if (isLoggedIn) {
+      fetchStatus();
+      const interval = setInterval(fetchStatus, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isLoggedIn]);
 
   async function runScraper(name: string) {
     setRunningScraper(name);
@@ -59,13 +108,18 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/run-scraper", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ scraper: name }),
       });
       const data = await res.json();
       if (data.success) {
         setMessage(`${name.toUpperCase()} scraper başarıyla çalıştırıldı.`);
         fetchStatus();
+      } else if (data.error === "Unauthorized") {
+        handleLogout();
       } else {
         setMessage(`Hata: ${data.error || "Bilinmeyen hata"}`);
       }
@@ -128,11 +182,78 @@ export default function AdminPage() {
     }
   }
 
+  // Login Form
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="bg-white rounded-xl border border-zinc-200 p-8 w-full max-w-md">
+          <div className="text-center mb-6">
+            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-zinc-900">Admin Girişi</h1>
+            <p className="text-zinc-500 text-sm mt-1">Hububat Fiyat Pano yönetim paneli</p>
+          </div>
+
+          {loginError && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm mb-4">
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 mb-1">Kullanıcı Adı</label>
+              <input
+                type="text"
+                value={loginData.username}
+                onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="ADMIN"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 mb-1">Şifre</label>
+              <input
+                type="password"
+                value={loginData.password}
+                onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-emerald-700 text-white py-2 rounded-lg hover:bg-emerald-800 transition-colors font-medium"
+            >
+              Giriş Yap
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin Dashboard
   return (
     <div className="space-y-8">
       <div className="bg-emerald-800 rounded-2xl p-8 text-white">
-        <h1 className="text-3xl font-bold mb-2">Admin Paneli</h1>
-        <p className="text-emerald-200">Veri takibi, otomasyon kontrolü ve manuel fiyat girişi.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Admin Paneli</h1>
+            <p className="text-emerald-200">Veri takibi, otomasyon kontrolü ve manuel fiyat girişi.</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            Çıkış Yap
+          </button>
+        </div>
       </div>
 
       {message && (

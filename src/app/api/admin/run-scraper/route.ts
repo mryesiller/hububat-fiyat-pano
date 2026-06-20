@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAdminToken } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  const querySecret = request.nextUrl.searchParams.get("secret");
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && querySecret !== cronSecret) {
+  const token = request.headers.get("x-admin-token");
+  if (!token || !verifyAdminToken(token)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const cronSecret = process.env.CRON_SECRET;
 
   const body = await request.json().catch(() => ({}));
   const { scraper } = body as { scraper?: string };
