@@ -35,6 +35,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900">
+        <script
+          src="https://feedbackflow-lilac.vercel.app/widget.js"
+          data-project="a279ccfe-02ac-42f3-8c5f-44b76c64a4fe"
+          defer
+        />
         <header className="bg-emerald-800 text-white shadow-md">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
